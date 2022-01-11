@@ -3,7 +3,16 @@
 #include "util/bsearch.h"
 #include "sparse_vector.h"
 #include "redisearch.h"
+#include "rm_assert.h"
 #include "util/arr.h"
+
+typedef struct {
+  rune *buf;
+  TrieRangeCallback *callback;
+  void *cbctx;
+  bool includeMin;
+  bool includeMax;
+} RangeCtx;
 
 size_t __trieNode_Sizeof(t_len numChildren, t_len slen) {
   return sizeof(TrieNode) + numChildren * sizeof(TrieNode *) + sizeof(rune) * (slen + 1);
@@ -270,6 +279,19 @@ float TrieNode_Find(TrieNode *n, rune *str, t_len len) {
   return res ? res->score : 0;
 }
 
+static TrieNode *TrieNode_Contain(TrieNode *n, rune *str, t_len len, t_len offset, RangeCtx *r) {
+  if (n->len != 1) RS_LOG_ASSERT(0, "todo");
+  if (offset == 0) {
+    r->callback(r->buf, array_len(r->buf), r->cbctx);
+  }
+
+  for (t_len i = 0; i < n->numChildren; i++) {
+    if (str[offset] == n->str[0]) {
+
+    }
+  }
+  
+}
 
 void __trieNode_sortChildren(TrieNode *n);
 
@@ -677,14 +699,6 @@ static int rsbComparePrefix(const void *h, const void *e) {
   return rsbCompareCommon(h, e, 1);
 }
 
-typedef struct {
-  rune *buf;
-  TrieRangeCallback *callback;
-  void *cbctx;
-  bool includeMin;
-  bool includeMax;
-} RangeCtx;
-
 static int rangeIterateSubTree(TrieNode *n, RangeCtx *r) {
   // Push string to stack
   r->buf = array_ensure_append(r->buf, n->str, n->len, rune);
@@ -880,6 +894,7 @@ void TrieNode_IterateRange(TrieNode *n, const rune *min, int nmin, bool includeM
 // Contains iteration.
 void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefix, bool suffix,
                               TrieRangeCallback callback, void *ctx) {
+  // exact match - should not be used. change to assert
   if (!prefix && !suffix) {
     if (TrieNode_Find(n, (rune *)str, nstr) != 0) {
       callback(str, nstr, ctx);
@@ -890,13 +905,13 @@ void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefi
   RangeCtx r = {
       .callback = callback,
       .cbctx = ctx,
-      //.includeMin = includeMin,
-      //.includeMax = includeMax,
   };
   
+  r.buf = array_new(rune, TRIE_INITIAL_STRING_LEN);
+  r.buf = array_ensure_append(r.buf, str, nstr, rune);
+
+  // prefix mode
   if (prefix && !suffix) {
-    r.buf = array_new(rune, TRIE_INITIAL_STRING_LEN);
-    r.buf = array_ensure_append(r.buf, str, nstr, rune);
 
     int offset = 0;
     TrieNode *res = TrieNode_Get(n, (rune *)str, nstr, false, &offset);
@@ -904,10 +919,17 @@ void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefi
       array_trimm_len(r.buf, offset);
       rangeIterateSubTree(res , &r);
     }
+    goto done;
   }
-  
 
-  // min < max we should start the scan
-  //rangeIterate(n, min, nmin, max, nmax, &r);
+  // contain and suffix mode
+  for (int i = 0; i < n->numChildren; ++i) {
+    if (str[i] == n->str[i]) {
+
+    }
+  }
+
+
+done:
   array_free(r.buf);
 }
