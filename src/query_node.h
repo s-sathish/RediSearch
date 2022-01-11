@@ -112,6 +112,12 @@ typedef struct {
   bool includeEnd;
 } QueryLexRangeNode;
 
+typedef struct {
+  char *str;
+  bool prefix;
+  bool suffix;
+} QueryContainsNode;
+
 typedef enum {
   QueryNode_Verbatim = 0x01,
 } QueryNodeFlags;
@@ -160,6 +166,7 @@ typedef struct RSQueryNode {
     QueryTagNode tag;
     QueryFuzzyNode fz;
     QueryLexRangeNode lxrng;
+    QueryContainsNode con;
   };
 
   /* The node type, for resolving the union access */

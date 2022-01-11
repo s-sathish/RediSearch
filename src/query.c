@@ -428,6 +428,7 @@ static IndexIterator *iterateExpandedTerms(QueryEvalCtx *q, Trie *terms, const c
 
 /* Ealuate a prefix node by expanding all its possible matches and creating one big UNION on all
  * of them */
+/*
 static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
   RS_LOG_ASSERT(qn->type == QN_PREFIX, "query node type should be prefix");
 
@@ -440,6 +441,57 @@ static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
   if (!terms) return NULL;
 
   return iterateExpandedTerms(q, terms, qn->pfx.str, qn->pfx.len, 0, 1, &qn->opts);
+}*/
+
+typedef struct {
+  IndexIterator **its;
+  size_t nits;
+  size_t cap;
+  QueryEvalCtx *q;
+  QueryNodeOptions *opts;
+  double weight;
+} ContainsCtx;
+
+static void rangeIterCb(const rune *r, size_t n, void *p);
+
+static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
+  RS_LOG_ASSERT(qn->type == QN_PREFIX, "query node type should be prefix");
+
+  // we allow a minimum of 2 letters in the prefx by default (configurable)
+  if (strlen(qn->con.str) < RSGlobalConfig.minTermPrefix) {
+    return NULL;
+  }
+  
+  Trie *t = q->sctx->spec->terms;
+  ContainsCtx ctx = {.q = q, .opts = &qn->opts};
+
+  if (!t) {
+    return NULL;
+  }
+
+  rune *str = NULL;
+  size_t nstr;
+  // if (qn->con.str) {
+  //   str = strToFoldedRunes(qn->con.str, &nstr);
+  // }
+  if (qn->pfx.str) {
+    str = strToFoldedRunes(qn->pfx.str, &nstr);
+  }
+
+  ctx.cap = 8;
+  ctx.its = rm_malloc(sizeof(*ctx.its) * ctx.cap);
+  ctx.nits = 0;
+
+  TrieNode_IterateContains(t->root, str, nstr, 1, 0,
+                           rangeIterCb, &ctx);
+
+  rm_free(str);
+  if (!ctx.its || ctx.nits == 0) {
+    rm_free(ctx.its);
+    return NULL;
+  } else {
+    return NewUnionIterator(ctx.its, ctx.nits, q->docTable, 1, qn->opts.weight, QN_PREFIX, NULL);
+  }
 }
 
 typedef struct {
@@ -522,6 +574,35 @@ static IndexIterator *Query_EvalLexRangeNode(QueryEvalCtx *q, QueryNode *lx) {
     return NULL;
   } else {
     return NewUnionIterator(ctx.its, ctx.nits, q->docTable, 1, lx->opts.weight, QN_LEXRANGE, NULL);
+  }
+}
+
+static IndexIterator *Query_EvalContainsNode(QueryEvalCtx *q, QueryNode *cn) {
+  Trie *t = q->sctx->spec->terms;
+  ContainsCtx ctx = {.q = q, .opts = &cn->opts};
+
+  if (!t) {
+    return NULL;
+  }
+
+  ctx.cap = 8;
+  ctx.its = rm_malloc(sizeof(*ctx.its) * ctx.cap);
+  ctx.nits = 0;
+
+  rune *str = NULL;
+  size_t nstr;
+  if (cn->con.str) {
+    str = strToFoldedRunes(cn->con.str, &nstr);
+  }
+
+  TrieNode_IterateContains(t->root, str, str ? nstr : -1, cn->con.prefix, cn->con.suffix,
+                           rangeIterCb, &ctx);
+  rm_free(str);
+  if (!ctx.its || ctx.nits == 0) {
+    rm_free(ctx.its);
+    return NULL;
+  } else {
+    return NewUnionIterator(ctx.its, ctx.nits, q->docTable, 1, cn->opts.weight, QN_PREFIX, NULL);
   }
 }
 

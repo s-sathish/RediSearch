@@ -217,7 +217,7 @@ int TrieNode_Add(TrieNode **np, rune *str, t_len len, RSPayload *payload, float 
   return 1;
 }
 
-float TrieNode_Find(TrieNode *n, rune *str, t_len len) {
+TrieNode *TrieNode_Get(TrieNode *n, rune *str, t_len len, bool exact, int *offsetOut) {
   t_len offset = 0;
   while (n && offset < len) {
     // printf("n %.*s offset %d, len %d\n", n->len, n->str, offset,
@@ -231,7 +231,12 @@ float TrieNode_Find(TrieNode *n, rune *str, t_len len) {
 
     if (offset == len) {
       // we're at the end of both strings!
-      if (localOffset == n->len) return __trieNode_isDeleted(n) ? 0 : n->score;
+      if (localOffset == n->len || !exact) {
+        if (offsetOut) {
+          *offsetOut = offset - localOffset;
+        }
+        return __trieNode_isDeleted(n) ? NULL : n;
+      }
 
     } else if (localOffset == n->len) {
       // we've reached the end of the node's string but not the search string
@@ -251,12 +256,19 @@ float TrieNode_Find(TrieNode *n, rune *str, t_len len) {
       n = nextChild;
 
     } else {
-      return 0;
+      return NULL;
     }
   }
 
-  return 0;
+  return NULL;
 }
+
+//TrieNode *TrieNode_Get(TrieNode *n, rune *str, t_len len);
+float TrieNode_Find(TrieNode *n, rune *str, t_len len) {
+  TrieNode *res = TrieNode_Get(n, str, len, true, NULL);
+  return res ? res->score : 0;
+}
+
 
 void __trieNode_sortChildren(TrieNode *n);
 
@@ -856,5 +868,38 @@ void TrieNode_IterateRange(TrieNode *n, const rune *min, int nmin, bool includeM
   };
   r.buf = array_new(rune, TRIE_INITIAL_STRING_LEN);
   rangeIterate(n, min, nmin, max, nmax, &r);
+  array_free(r.buf);
+}
+
+// Contains iteration.
+void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefix, bool suffix,
+                              TrieRangeCallback callback, void *ctx) {
+  if (!prefix && !suffix) {
+    if (TrieNode_Find(n, (rune *)str, nstr) != 0) {
+      callback(str, nstr, ctx);
+    }
+    return;
+  }
+
+  RangeCtx r = {
+      .callback = callback,
+      .cbctx = ctx,
+      //.includeMin = includeMin,
+      //.includeMax = includeMax,
+  };
+  
+  if (prefix && !suffix) {
+    r.buf = array_new(rune, TRIE_INITIAL_STRING_LEN);
+    r.buf = array_ensure_append(r.buf, str, nstr, rune);
+
+    int offset;
+    TrieNode *res = TrieNode_Get(n, (rune *)str, nstr, false, &offset);
+    array_trimm_len(r.buf, offset);
+    rangeIterateSubTree(res , &r);
+  }
+  
+
+  // min < max we should start the scan
+  //rangeIterate(n, min, nmin, max, nmax, &r);
   array_free(r.buf);
 }
