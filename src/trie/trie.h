@@ -205,7 +205,7 @@ int TrieIterator_Next(TrieIterator *it, rune **ptr, t_len *len, RSPayload *paylo
 
 TrieNode *TrieNode_RandomWalk(TrieNode *n, int minSteps, rune **str, t_len *len);
 
-typedef void(TrieRangeCallback)(const rune *, size_t, void *);
+typedef int(TrieRangeCallback)(const rune *, size_t, void *);
 
 /**
  * Iterate all nodes within range.

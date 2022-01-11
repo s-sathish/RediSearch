@@ -452,7 +452,7 @@ typedef struct {
   double weight;
 } ContainsCtx;
 
-static void rangeIterCb(const rune *r, size_t n, void *p);
+static int rangeIterCb(const rune *r, size_t n, void *p);
 
 static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
   RS_LOG_ASSERT(qn->type == QN_PREFIX, "query node type should be prefix");
@@ -490,7 +490,8 @@ static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
     rm_free(ctx.its);
     return NULL;
   } else {
-    return NewUnionIterator(ctx.its, ctx.nits, q->docTable, 1, qn->opts.weight, QN_PREFIX, NULL);
+    return NewUnionIterator(ctx.its, ctx.nits, q->docTable, 1, qn->opts.weight,
+                            QN_PREFIX, qn->pfx.str);
   }
 }
 
@@ -527,8 +528,11 @@ static void rangeIterCbStrs(const char *r, size_t n, void *p, void *invidx) {
   rangeItersAddIterator(ctx, ir);
 }
 
-static void rangeIterCb(const rune *r, size_t n, void *p) {
+static int rangeIterCb(const rune *r, size_t n, void *p) {
   LexRangeCtx *ctx = p;
+  if (ctx->nits >= RSGlobalConfig.maxPrefixExpansions) {
+    return REDISEARCH_ERR;
+  }
   QueryEvalCtx *q = ctx->q;
   RSToken tok = {0};
   tok.str = runesToStr(r, n, &tok.len);
@@ -538,10 +542,11 @@ static void rangeIterCb(const rune *r, size_t n, void *p) {
   rm_free(tok.str);
   if (!ir) {
     Term_Free(term);
-    return;
+    return REDISEARCH_OK;
   }
 
   rangeItersAddIterator(ctx, ir);
+  return REDISEARCH_OK;
 }
 
 static IndexIterator *Query_EvalLexRangeNode(QueryEvalCtx *q, QueryNode *lx) {

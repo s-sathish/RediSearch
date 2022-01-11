@@ -224,6 +224,7 @@ TrieNode *TrieNode_Get(TrieNode *n, rune *str, t_len len, bool exact, int *offse
     // len);
     t_len localOffset = 0;
     for (; offset < len && localOffset < n->len; offset++, localOffset++) {
+      // printf("%d %c %d %c\n", offset, str[offset], localOffset, n->str[localOffset]);
       if (str[offset] != n->str[localOffset]) {
         break;
       }
@@ -684,22 +685,27 @@ typedef struct {
   bool includeMax;
 } RangeCtx;
 
-static void rangeIterateSubTree(TrieNode *n, RangeCtx *r) {
+static int rangeIterateSubTree(TrieNode *n, RangeCtx *r) {
   // Push string to stack
   r->buf = array_ensure_append(r->buf, n->str, n->len, rune);
 
   if (__trieNode_isTerminal(n)) {
-    r->callback(r->buf, array_len(r->buf), r->cbctx);
+    if (r->callback(r->buf, array_len(r->buf), r->cbctx) != REDISEARCH_OK) {
+      return REDISEARCH_ERR;
+    }
   }
 
   TrieNode **arr = __trieNode_children(n);
 
   for (size_t ii = 0; ii < n->numChildren; ++ii) {
     // printf("Descending to index %lu\n", ii);
-    rangeIterateSubTree(arr[ii], r);
+    if (rangeIterateSubTree(arr[ii], r) != REDISEARCH_OK) {
+      return REDISEARCH_ERR;
+    }
   }
 
   array_trimm_len(r->buf, array_len(r->buf) - n->len);
+  return REDISEARCH_OK;
 }
 
 /**
@@ -892,10 +898,12 @@ void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefi
     r.buf = array_new(rune, TRIE_INITIAL_STRING_LEN);
     r.buf = array_ensure_append(r.buf, str, nstr, rune);
 
-    int offset;
+    int offset = 0;
     TrieNode *res = TrieNode_Get(n, (rune *)str, nstr, false, &offset);
-    array_trimm_len(r.buf, offset);
-    rangeIterateSubTree(res , &r);
+    if (res) {
+      array_trimm_len(r.buf, offset);
+      rangeIterateSubTree(res , &r);
+    }
   }
   
 
