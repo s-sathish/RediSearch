@@ -3,15 +3,21 @@
 #include "util/bsearch.h"
 #include "sparse_vector.h"
 #include "redisearch.h"
-#include "rm_assert.h"
+#include "rmutil/rm_assert.h"
 #include "util/arr.h"
 
 typedef struct {
   rune *buf;
   TrieRangeCallback *callback;
   void *cbctx;
+  // for lexrange
   bool includeMin;
   bool includeMax;
+  // for prefix, suffix, contains
+  bool prefix;
+  bool suffix;
+  rune *origStr;
+  rune *nOrigStr;
 } RangeCtx;
 
 size_t __trieNode_Sizeof(t_len numChildren, t_len slen) {
@@ -891,6 +897,8 @@ void TrieNode_IterateRange(TrieNode *n, const rune *min, int nmin, bool includeM
   array_free(r.buf);
 }
 
+static void containsIterate(TrieNode *n, t_len localOffset, t_len globalOffset, RangeCtx *r);
+
 // Contains iteration.
 void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefix, bool suffix,
                               TrieRangeCallback callback, void *ctx) {
@@ -908,11 +916,10 @@ void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefi
   };
   
   r.buf = array_new(rune, TRIE_INITIAL_STRING_LEN);
-  r.buf = array_ensure_append(r.buf, str, nstr, rune);
 
   // prefix mode
   if (prefix && !suffix) {
-
+    r.buf = array_ensure_append(r.buf, str, nstr, rune);
     int offset = 0;
     TrieNode *res = TrieNode_Get(n, (rune *)str, nstr, false, &offset);
     if (res) {
@@ -922,14 +929,66 @@ void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefi
     goto done;
   }
 
-  // contain and suffix mode
-  for (int i = 0; i < n->numChildren; ++i) {
-    if (str[i] == n->str[i]) {
-
-    }
-  }
-
+  // contains and suffix mode
+  r.origStr = str;
+  r.nOrigStr = nstr;
+  r.prefix = prefix;
+  r.suffix = suffix;
+  containsIterate(n, 0, 0, &r);
 
 done:
   array_free(r.buf);
 }
+
+
+/**
+ * Try to place as many of the common arguments in rangectx, so that the stack
+ * size is not negatively impacted and prone to attack.
+ */
+static void containsIterate(TrieNode *n, t_len localOffset, t_len globalOffset, RangeCtx *r) {
+  if (__trieNode_isTerminal(n) && r->nOrigStr - globalOffset > n->len) {
+    return;
+  }
+
+  r->buf = array_ensure_append(r->buf, &n->str[localOffset], 1, rune);
+  TrieNode **children = __trieNode_children(n);
+
+  // next char matches
+  if (n->str[localOffset] == r->origStr[globalOffset]) {
+    /* full match found */
+    if (globalOffset == r->nOrigStr) {
+      if (r->prefix) { // contains mode
+        rangeIterateSubTree(n, r);
+        return;
+      } else { // suffix mode
+        if (__trieNode_isTerminal(n) && localOffset + 1 == n->len) {
+          r->callback(r->buf, array_len(r->buf), r->cbctx);
+          return;
+        } else {
+        // suffix match cannot have extra chars. continue to search downstream
+        }
+      }
+    /* partial match found */
+    // if node string is exhausted, check children
+    } else if (/*n->len == 1 ||*/ n->len == localOffset + 1) {
+      for (t_len i = 0; i < n->numChildren; ++i) {
+        containsIterate(children[i], 0, globalOffset + 1, r);
+      }
+    // continue on node string
+    } else {
+      containsIterate(n, localOffset + 1, globalOffset + 1, r);
+    }
+  
+  // no fit try on next character
+  } else {
+    if (/*n->len == 1 ||*/ n->len == localOffset + 1) {
+      for (t_len i = 0; i < n->numChildren; ++i) {
+        // TODO: check if child max depth < r->nOrigStr
+        containsIterate(children[i], 0, 0, r); 
+      }
+    } else {
+      containsIterate(n, localOffset + 1, 0, r);
+    }
+  }
+  return;
+}                         

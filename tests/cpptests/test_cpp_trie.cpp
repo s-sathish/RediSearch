@@ -123,3 +123,30 @@ TEST_F(TrieTest, testDeepEntry) {
   ASSERT_EQ(maxbuf, ret.size());
   TrieType_Free(t);
 }
+
+/*
+static ElemSet trieIterContains(TrieNode *n, const rune *str, int nstr, bool prefix, bool suffix,
+                              TrieRangeCallback callback, void *ctx) {
+
+  rune r1[256] = {0};
+  size_t nr1, nr2;
+
+  rune *r1Ptr = r1;
+
+  nr1 = strToRunesN(str, nstr, r1);
+
+  if (!str) {
+    r1Ptr = NULL;
+    nr1 = -1;
+  }
+
+  ElemSet foundElements;
+  TrieNode_IterateContains(t->root, 
+                        rangeFunc, &foundElements);
+  return foundElements;
+}
+
+static ElemSet trieIterContains(Trie *t, const char *begin, const char *end) {
+  return trieIterContains(t, begin, begin ? strlen(begin) : 0, end, end ? strlen(end) : 0);
+}
+*/
