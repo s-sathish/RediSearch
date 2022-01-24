@@ -482,7 +482,8 @@ static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
   ctx.its = rm_malloc(sizeof(*ctx.its) * ctx.cap);
   ctx.nits = 0;
 
-  TrieNode_IterateContains(t->root, str, nstr, 1, 0,
+  // TODO: this uses prefix syntax until parser is changed
+  TrieNode_IterateContains(t->root, str, nstr, 1, 1,
                            rangeIterCb, &ctx);
 
   rm_free(str);
