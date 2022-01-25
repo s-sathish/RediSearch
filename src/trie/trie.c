@@ -957,6 +957,19 @@ done:
 #define trimOne(n, r)                                   \
 if (n->len) array_trimm_len(r->buf, array_len(r->buf) - 1)
 
+// check next char on node or children
+static void containsNext(TrieNode *n, t_len localOffset, t_len globalOffset, RangeCtx *r) {
+  if (n->len == localOffset + 1 || n->len == 0 ) {
+    TrieNode **children = __trieNode_children(n);
+    for (t_len i = 0; i < n->numChildren; ++i) {
+      containsIterate(children[i], 0, globalOffset, r); 
+    }
+  } else {
+    containsIterate(n, localOffset + 1, 0, r);
+  }
+  trimOne(n, r);
+}
+
 /**
  * Try to place as many of the common arguments in rangectx, so that the stack
  * size is not negatively impacted and prone to attack.
@@ -1001,56 +1014,15 @@ static void containsIterate(TrieNode *n, t_len localOffset, t_len globalOffset, 
       }
     }
 
-
     /* partial match found */
     // if node string is exhausted, check children
-    if (/*n->len == 1 ||*/ n->len == localOffset + 1) {
-      for (t_len i = 0; i < n->numChildren; ++i) {
-        // TODO: if success, break
-        containsIterate(children[i], 0, globalOffset + 1, r);
-        //trimOne(n, r);
-        printStats("partial children");
-      }
-    // continue on node string
-    } else {
-      containsIterate(n, localOffset + 1, globalOffset + 1, r);
-      //trimOne(n, r);
-      printStats("partial self");
-    }
-    trimOne(n, r);
-  
+    containsNext(n, localOffset, globalOffset + 1, r);
   // no fit
   // try from the string begining
   } else if (n->str[localOffset] == r->origStr[0]) {
-    if (n->len == localOffset + 1) {
-      for (t_len i = 0; i < n->numChildren; ++i) {
-        // TODO: check if child max depth < r->nOrigStr
-        containsIterate(children[i], 0, 1, r); 
-        // trimOne(n, r);
-        printStats("none new search children");
-      }
-    } else {
-      containsIterate(n, localOffset + 1, 1, r);
-      printStats("none new search local");
-    }
-    trimOne(n, r);
+    containsNext(n, localOffset, 1, r);
   } else { //try on next character
-    // We are at root or consumed all chars of node
-    if (/*n->len == 1 ||*/ n->len == localOffset + 1 || n->len == 0 ) {
-      for (t_len i = 0; i < n->numChildren; ++i) {
-        // TODO: check if child max depth < r->nOrigStr
-        containsIterate(children[i], 0, 0, r); 
-        // trimOne(n, r);
-        printStats("none children");
-
-      }
-    } else {
-      containsIterate(n, localOffset + 1, 0, r);
-      // trimOne(n, r);
-      printStats("none self");
-    }
-    trimOne(n, r);
-  }
+    containsNext(n, localOffset, 0, r);
   printStats("return");
   return;
 }                         
