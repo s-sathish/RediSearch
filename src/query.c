@@ -82,7 +82,7 @@ void QueryNode_Free(QueryNode *n) {
       NumericFilter_Free((void *)n->nn.nf);
       break;
     case QN_PREFIX:
-      QueryTokenNode_Free(&n->pfx);
+      QueryTokenNode_Free(&n->pfx.tok);
       break;
     case QN_GEO:
       if (n->gn.gf) {
@@ -191,16 +191,18 @@ bool QueryNode_SetParam(QueryParseCtx *q, Param *target_param, void *target_valu
       source); //FIXME: Move to a common location for QueryNode and QueryParam
 }
 
-QueryNode *NewPrefixNode_WithParams(QueryParseCtx *q, QueryToken *qt) {
+QueryNode *NewPrefixNode_WithParams(QueryParseCtx *q, QueryToken *qt, bool prefix, bool suffix) {
   QueryNode *ret = NewQueryNode(QN_PREFIX);
+  ret->pfx.prefix = prefix;
+  ret->pfx.suffix = suffix;
   q->numTokens++;
   if (qt->type == QT_TERM) {
     char *s = rm_strdupcase(qt->s, qt->len);
-    ret->pfx = (QueryPrefixNode){.str = s, .len = strlen(s), .expanded = 0, .flags = 0};
+    ret->pfx.tok = (RSToken){.str = s, .len = strlen(s), .expanded = 0, .flags = 0};
   } else {
     assert (qt->type == QT_PARAM_TERM);
     QueryNode_InitParams(ret, 1);
-    QueryNode_SetParam(q, &ret->params[0], &ret->pfx.str, &ret->pfx.len, qt);
+    QueryNode_SetParam(q, &ret->params[0], &ret->pfx.tok.str, &ret->pfx.tok.len, qt);
   }
   return ret;
 }
@@ -432,14 +434,14 @@ static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
   RS_LOG_ASSERT(qn->type == QN_PREFIX, "query node type should be prefix");
 
   // we allow a minimum of 2 letters in the prefx by default (configurable)
-  if (qn->pfx.len < RSGlobalConfig.minTermPrefix) {
+  if (qn->pfx.tok.len < RSGlobalConfig.minTermPrefix) {
     return NULL;
   }
   Trie *terms = q->sctx->spec->terms;
 
   if (!terms) return NULL;
 
-  return iterateExpandedTerms(q, terms, qn->pfx.str, qn->pfx.len, 0, 1, &qn->opts);
+  return iterateExpandedTerms(q, terms, qn->pfx.tok.str, qn->pfx.tok.len, 0, 1, &qn->opts);
 }
 
 typedef struct {
@@ -532,7 +534,7 @@ static IndexIterator *Query_EvalFuzzyNode(QueryEvalCtx *q, QueryNode *qn) {
 
   if (!terms) return NULL;
 
-  return iterateExpandedTerms(q, terms, qn->pfx.str, qn->pfx.len, qn->fz.maxDist, 0, &qn->opts);
+  return iterateExpandedTerms(q, terms, qn->pfx.tok.str, qn->pfx.tok.len, qn->fz.maxDist, 0, &qn->opts);
 }
 
 static IndexIterator *Query_EvalPhraseNode(QueryEvalCtx *q, QueryNode *qn) {
@@ -712,12 +714,12 @@ static IndexIterator *Query_EvalTagPrefixNode(QueryEvalCtx *q, TagIndex *idx, Qu
   }
 
   // we allow a minimum of 2 letters in the prefx by default (configurable)
-  if (qn->pfx.len < RSGlobalConfig.minTermPrefix) {
+  if (qn->pfx.tok.len < RSGlobalConfig.minTermPrefix) {
     return NULL;
   }
   if (!idx || !idx->values) return NULL;
 
-  TrieMapIterator *it = TrieMap_Iterate(idx->values, qn->pfx.str, qn->pfx.len);
+  TrieMapIterator *it = TrieMap_Iterate(idx->values, qn->pfx.tok.str, qn->pfx.tok.len);
   if (!it) return NULL;
 
   size_t itsSz = 0, itsCap = 8;
@@ -751,7 +753,7 @@ static IndexIterator *Query_EvalTagPrefixNode(QueryEvalCtx *q, TagIndex *idx, Qu
   }
 
   *iterout = array_ensure_append(*iterout, its, itsSz, IndexIterator *);
-  return NewUnionIterator(its, itsSz, q->docTable, 1, weight, QN_PREFIX, qn->pfx.str);
+  return NewUnionIterator(its, itsSz, q->docTable, 1, weight, QN_PREFIX, qn->pfx.tok.str);
 }
 
 static void tag_strtolower(char *str, size_t *len, int caseSensitive) {
@@ -1188,7 +1190,7 @@ static sds QueryNode_DumpSds(sds s, const IndexSpec *spec, const QueryNode *qs, 
       return s;
 
     case QN_PREFIX:
-      s = sdscatprintf(s, "PREFIX{%s*", (char *)qs->pfx.str);
+      s = sdscatprintf(s, "PREFIX{%s*", (char *)qs->pfx.tok.str);
       break;
 
     case QN_LEXRANGE:
