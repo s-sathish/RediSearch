@@ -1023,6 +1023,7 @@ static void containsIterate(TrieNode *n, t_len localOffset, t_len globalOffset, 
     containsNext(n, localOffset, 1, r);
   } else { //try on next character
     containsNext(n, localOffset, 0, r);
+  }
   printStats("return");
   return;
 }                         
