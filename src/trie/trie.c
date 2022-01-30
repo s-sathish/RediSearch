@@ -965,7 +965,7 @@ static void containsNext(TrieNode *n, t_len localOffset, t_len globalOffset, Ran
       containsIterate(children[i], 0, globalOffset, r); 
     }
   } else {
-    containsIterate(n, localOffset + 1, 0, r);
+    containsIterate(n, localOffset + 1, globalOffset, r);
   }
   trimOne(n, r);
 }
