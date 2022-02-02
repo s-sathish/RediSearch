@@ -174,14 +174,14 @@ int MRCluster_FanoutCommand(MRCluster *cl, MRCoordinationStrategy strategy, MRCo
   }
 
   MRNodeMapIterator it;
-  switch (strategy & ~(MRCluster_MastersOnly)) {
+  switch (strategy & ~(MRCluster_MastersOnly | MRCluster_SlaveOnly)) {
     case MRCluster_RemoteCoordination:
       it = MRNodeMap_IterateRandomNodePerhost(cl->nodeMap, cl->myNode);
       break;
     case MRCluster_LocalCoordination:
       it = MRNodeMap_IterateHost(cl->nodeMap, cl->myNode->endpoint.host);
       break;
-    default:
+    case MRCluster_FlatCoordination:
       it = MRNodeMap_IterateAll(cl->nodeMap);
   }
 
@@ -189,6 +189,9 @@ int MRCluster_FanoutCommand(MRCluster *cl, MRCoordinationStrategy strategy, MRCo
   MRClusterNode *n;
   while (NULL != (n = it.Next(&it))) {
     if ((strategy & MRCluster_MastersOnly) && !(n->flags & MRNode_Master)) {
+      continue;
+    }
+    if ((strategy & MRCluster_SlaveOnly) && (n->flags & MRNode_Master)) {
       continue;
     }
     MRConn *conn = MRConn_Get(&cl->mgr, n->id);

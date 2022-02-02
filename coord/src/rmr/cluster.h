@@ -92,9 +92,11 @@ typedef enum {
   MRCluster_RemoteCoordination,
   /* Send the command to local nodes only - i.e. nodes working on the same physical host */
   MRCluster_LocalCoordination,
-  /* If this is set, we only wish to talk to masters.
+
+  /* If this is set, we only wish to talk to masters or slaves.
    * NOTE: This is a flag that should be added to the strategy along with one of the above */
   MRCluster_MastersOnly = 0x08,
+  MRCluster_SlaveOnly = 0x10,
 
 } MRCoordinationStrategy;
 

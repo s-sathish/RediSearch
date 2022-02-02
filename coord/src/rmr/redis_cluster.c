@@ -26,13 +26,13 @@ MRClusterTopology *RedisCluster_GetTopology(RedisModuleCtx *ctx) {
   }
 
   /*1) 1) (integer) 0
-   2) (integer) 5460
-   3) 1) "127.0.0.1"
-      2) (integer) 30001
-      3) "09dbe9720cda62f7865eabc5fd8857c5d2678366"
-   4) 1) "127.0.0.1"
-      2) (integer) 30004
-      3) "821d8ca00d7ccf931ed3ffc7e3db0599d2271abf"*/
+    2) (integer) 5460
+    3) 1) "127.0.0.1"
+       2) (integer) 30001
+       3) "09dbe9720cda62f7865eabc5fd8857c5d2678366"
+    4) 1) "127.0.0.1"
+       2) (integer) 30004
+       3) "821d8ca00d7ccf931ed3ffc7e3db0599d2271abf"*/
 
   size_t len = RedisModule_CallReplyLength(r);
   if (len < 1) {
