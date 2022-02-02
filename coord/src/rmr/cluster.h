@@ -95,6 +95,7 @@ typedef enum {
   /* If this is set, we only wish to talk to masters.
    * NOTE: This is a flag that should be added to the strategy along with one of the above */
   MRCluster_MastersOnly = 0x08,
+  MRCluster_RandomSlot = 0x10,
 
 } MRCoordinationStrategy;
 

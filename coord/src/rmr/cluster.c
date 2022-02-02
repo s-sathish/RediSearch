@@ -4,6 +4,7 @@
 #include "crc16.h"
 #include "crc12.h"
 #include "rmutil/vector.h"
+#include "rmutil/rm_assert.h"
 
 #include <stdlib.h>
 
@@ -173,37 +174,64 @@ int MRCluster_FanoutCommand(MRCluster *cl, MRCoordinationStrategy strategy, MRCo
     return 0;
   }
 
-  MRNodeMapIterator it;
-  switch (strategy & ~(MRCluster_MastersOnly)) {
-    case MRCluster_RemoteCoordination:
-      it = MRNodeMap_IterateRandomNodePerhost(cl->nodeMap, cl->myNode);
-      break;
-    case MRCluster_LocalCoordination:
-      it = MRNodeMap_IterateHost(cl->nodeMap, cl->myNode->endpoint.host);
-      break;
-    default:
-      it = MRNodeMap_IterateAll(cl->nodeMap);
-  }
-
   int ret = 0;
-  MRClusterNode *n;
-  while (NULL != (n = it.Next(&it))) {
-    if ((strategy & MRCluster_MastersOnly) && !(n->flags & MRNode_Master)) {
-      continue;
+  // Send to all shards
+  if (!(strategy & (MRCluster_RandomSlot)) || 
+      strategy & (MRCluster_RemoteCoordination | MRCluster_LocalCoordination)) {
+    MRNodeMapIterator it;
+    switch (strategy & ~(MRCluster_MastersOnly | MRCluster_RandomSlot)) {
+      case MRCluster_RemoteCoordination:
+        it = MRNodeMap_IterateRandomNodePerhost(cl->nodeMap, cl->myNode);
+        break;
+      case MRCluster_LocalCoordination:
+        it = MRNodeMap_IterateHost(cl->nodeMap, cl->myNode->endpoint.host);
+        break;
+      case MRCluster_FlatCoordination:
+        it = MRNodeMap_IterateAll(cl->nodeMap);
     }
-    MRConn *conn = MRConn_Get(&cl->mgr, n->id);
-    // printf("Sending fanout command to %s:%d\n", conn->ep.host, conn->ep.port);
-    if (conn) {
-      if (MRConn_SendCommand(conn, cmd, fn, privdata) != REDIS_ERR) {
-        ret++;
+
+    MRClusterNode *n;
+    while (NULL != (n = it.Next(&it))) {
+      if ((strategy & MRCluster_MastersOnly) && !(n->flags & MRNode_Master)) {
+        continue;
+      }
+      MRConn *conn = MRConn_Get(&cl->mgr, n->id);
+      // printf("Sending fanout command to %s:%d\n", conn->ep.host, conn->ep.port);
+      if (conn) {
+        if (MRConn_SendCommand(conn, cmd, fn, privdata) != REDIS_ERR) {
+          ret++;
+        }
+      }
+    MRNodeMapIterator_Free(&it);
+    }
+  
+  // Send to either master node or a single random node on each shard
+  } else {
+    MRClusterTopology *topo = cl->topo;
+    MRClusterShard *shard;
+    MRClusterNode *node;
+    for (int i = 0; i < topo->numShards; ++i) {
+      shard = topo->shards + i;
+      if (strategy & MRCluster_MastersOnly) {
+        node = &shard[0];
+        //RS_LOG_ASSERT(node->flags & MRNode_Master, "first node is master");
+      } else if (strategy & MRCluster_RandomSlot) {
+        node = &shard->nodes[rand() % shard->numNodes];
+      }
+      MRConn *conn = MRConn_Get(&cl->mgr, node->id);
+      // printf("Sending fanout command to %s:%d\n", conn->ep.host, conn->ep.port);
+      if (conn) {
+        if (MRConn_SendCommand(conn, cmd, fn, privdata) != REDIS_ERR) {
+          ret++;
+        }
       }
     }
   }
+
   if(cmd->cmd) {
     sdsfree(cmd->cmd);
     cmd->cmd = NULL;
   }
-  MRNodeMapIterator_Free(&it);
 
   return ret;
 }
