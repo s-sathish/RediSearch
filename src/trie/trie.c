@@ -18,6 +18,7 @@ typedef struct {
   bool suffix;
   const rune *origStr;
   int nOrigStr;
+  rune leadingChar;
 } RangeCtx;
 
 size_t __trieNode_Sizeof(t_len numChildren, t_len slen) {
@@ -943,6 +944,7 @@ void TrieNode_IterateContains(TrieNode *n, const rune *str, int nstr, bool prefi
   r.nOrigStr = nstr;
   r.prefix = prefix;
   r.suffix = suffix;
+  r.leadingChar = str[0];
   containsIterate(n, 0, 0, &r);
 
 done:
@@ -951,7 +953,7 @@ done:
 
 
 #define printStats(stage)                               \
-// str = runesToStr(r->buf, array_len(r->buf), &len);      \
+// str = runesToStr(r->buf, array_len(r->buf), &len);   \
 // printf("%s:%s %ld\n", stage, str, len);
 
 #define trimOne(n, r)                                   \
@@ -962,10 +964,16 @@ static void containsNext(TrieNode *n, t_len localOffset, t_len globalOffset, Ran
   if (n->len == localOffset + 1 || n->len == 0 ) {
     TrieNode **children = __trieNode_children(n);
     for (t_len i = 0; i < n->numChildren; ++i) {
-      containsIterate(children[i], 0, globalOffset, r); 
+      containsIterate(children[i], 0, globalOffset, r);
+      if (globalOffset == 1 && children[i]->str[0] == r->leadingChar) {
+        containsIterate(children[i], 0, 0, r);
+      }
     }
   } else {
     containsIterate(n, localOffset + 1, globalOffset, r);
+    if (globalOffset == 1 && n->str[localOffset + 1] == r->leadingChar) {
+      containsIterate(n, localOffset + 1, 0, r);
+    }
   }
   trimOne(n, r);
 }
@@ -1008,8 +1016,7 @@ static void containsIterate(TrieNode *n, t_len localOffset, t_len globalOffset, 
           return;
         } else {
           // suffix match cannot have extra chars. continue to search downstream
-          // TODO:
-          // globalOffset = 0;
+
         }
       }
     }
@@ -1019,11 +1026,11 @@ static void containsIterate(TrieNode *n, t_len localOffset, t_len globalOffset, 
     containsNext(n, localOffset, globalOffset + 1, r);
   // no fit
   // try from the string begining
-  } else if (n->str[localOffset] == r->origStr[0]) {
+  } else if (globalOffset != 0 && n->str[localOffset] == r->origStr[0]) {
     containsNext(n, localOffset, 1, r);
   } else { //try on next character
     containsNext(n, localOffset, 0, r);
   }
   printStats("return");
   return;
-}                         
+}
