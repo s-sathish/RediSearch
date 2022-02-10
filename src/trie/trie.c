@@ -965,13 +965,13 @@ static void containsNext(TrieNode *n, t_len localOffset, t_len globalOffset, Ran
     TrieNode **children = __trieNode_children(n);
     for (t_len i = 0; i < n->numChildren; ++i) {
       containsIterate(children[i], 0, globalOffset, r);
-      if (globalOffset == 1 && children[i]->str[0] == r->leadingChar) {
+      if (children[i]->str[0] == r->leadingChar) {
         containsIterate(children[i], 0, 0, r);
       }
     }
   } else {
     containsIterate(n, localOffset + 1, globalOffset, r);
-    if (globalOffset == 1 && n->str[localOffset + 1] == r->leadingChar) {
+    if (n->str[localOffset + 1] == r->leadingChar) {
       containsIterate(n, localOffset + 1, 0, r);
     }
   }
