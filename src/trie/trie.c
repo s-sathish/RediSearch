@@ -1010,14 +1010,13 @@ static void containsIterate(TrieNode *n, t_len localOffset, t_len globalOffset, 
         r->buf = array_ensure_append(r->buf, &n->str[0], localOffset, rune);
         return;
       } else { // suffix mode
+        // it is suffix match if node is terminal and have no extra characters.
         if (__trieNode_isTerminal(n) && localOffset + 1 == n->len) {
           r->callback(r->buf, array_len(r->buf), r->cbctx);
-          trimOne(n, r);
-          return;
-        } else {
-          // suffix match cannot have extra chars. continue to search downstream
-
         }
+        // check if there are more suffixes downstream
+        containsNext(n, localOffset, 0, r);
+        return;
       }
     }
 
