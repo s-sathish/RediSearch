@@ -2,6 +2,7 @@ from includes import *
 from common import *
 import os
 import csv
+import random
 
 
 
@@ -29,7 +30,7 @@ def testBasicContains(env):
     env.assertEqual(set(res[2]), set(['title', 'hello world', 'body', 'this is a test']))
 
 def testSanity(env):
-    item_qty = 1000000
+    item_qty = 25000
     query_qty = 1
 
     conn = getConnectionByEnv(env)
@@ -38,13 +39,16 @@ def testSanity(env):
 
     start = time.time()
     for i in range(item_qty):
-        pl.execute_command('HSET', 'doc%d' % i, 't', 'foo%d' % i)
-        pl.execute_command('HSET', 'doc%d' % (i + item_qty), 't', 'fooo%d' % i)
-        pl.execute_command('HSET', 'doc%d' % (i + item_qty * 2), 't', 'foooo%d' % i)
-        pl.execute_command('HSET', 'doc%d' % (i + item_qty * 3), 't', 'foofo%d' % i)
+        j = random.randint(0, 100000000)
+        pl.execute_command('HSET', 'doc%d' % i, 't', 'foo%d' % j)
+        pl.execute_command('HSET', 'doc%d' % (i + item_qty), 't', 'fooo%d' % j)
+        pl.execute_command('HSET', 'doc%d' % (i + item_qty * 2), 't', 'foooo%d' % j)
+        pl.execute_command('HSET', 'doc%d' % (i + item_qty * 3), 't', 'foofo%d' % j)
         pl.execute()
     print (time.time() - start)
-    raw_input('stop')
+    env.cmd('save')
+    sys.stdin = open('/dev/tty')
+    raw_input('pause')
     #env.expect('ft.search', 'idx', '*').equal(item_qty)
 
     for _ in range(1):
