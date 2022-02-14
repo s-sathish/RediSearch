@@ -580,6 +580,7 @@ static int UI_SkipToHigh(void *ctx, t_docId docId, RSIndexResult **hit) {
     heap_cb_root(hp, (HeapCallback)UI_HeapAddChildren, ui);
   }
 
+  ui->minDocId = it->minId;
   *hit = CURRENT_RECORD(ui);
   return rc;
 }
@@ -827,7 +828,7 @@ static int II_SkipTo(void *ctx, t_docId docId, RSIndexResult **hit) {
     if (ic->docIds[i] != docId) {
       rc = it->SkipTo(it->ctx, docId, &res);
       if (rc != INDEXREAD_EOF) {
-        if (res) ic->docIds[i] = res->docId;
+        if (res) docId = ic->docIds[i] = res->docId;
       }
     }
 
@@ -860,6 +861,7 @@ static int II_SkipTo(void *ctx, t_docId docId, RSIndexResult **hit) {
     if (ic->maxSlop == -1 ||
         IndexResult_IsWithinRange(ic->base.current, ic->maxSlop, ic->inOrder)) {
       ic->lastFoundId = ic->base.current->docId;
+      ic->lastDocId++;
       if (hit) *hit = ic->base.current;
       return INDEXREAD_OK;
     }
@@ -1062,6 +1064,7 @@ typedef struct {
 
 static void NI_Abort(void *ctx) {
   NotContext *nc = ctx;
+  nc->base.isValid = 0;
   nc->child->Abort(nc->child->ctx);
 }
 
@@ -1069,6 +1072,7 @@ static void NI_Rewind(void *ctx) {
   NotContext *nc = ctx;
   nc->lastDocId = 0;
   nc->base.current->docId = 0;
+  nc->base.isValid = 1;
   nc->child->Rewind(nc->child->ctx);
 }
 
@@ -1091,6 +1095,7 @@ static int NI_SkipTo(void *ctx, t_docId docId, RSIndexResult **hit) {
 
   // do not skip beyond max doc id
   if (docId > nc->maxDocId) {
+    IITER_SET_EOF(&nc->base);
     return INDEXREAD_EOF;
   }
 
@@ -1176,6 +1181,7 @@ static int NI_ReadUnsorted(void *ctx, RSIndexResult **hit) {
     }
     ++nc->lastDocId;
   }
+  IITER_SET_EOF(&nc->base);
   return INDEXREAD_EOF;
 }
 
@@ -1183,7 +1189,10 @@ static int NI_ReadUnsorted(void *ctx, RSIndexResult **hit) {
  * NOT node. We simply read until max docId, skipping docIds that exist in the child*/
 static int NI_ReadSorted(void *ctx, RSIndexResult **hit) {
   NotContext *nc = ctx;
-  if (nc->lastDocId > nc->maxDocId) return INDEXREAD_EOF;
+  if (nc->lastDocId > nc->maxDocId) {
+    IITER_SET_EOF(&nc->base);
+    return INDEXREAD_EOF;
+  }
 
   RSIndexResult *cr = NULL;
   // if we have a child, get the latest result from the child
@@ -1216,6 +1225,7 @@ static int NI_ReadSorted(void *ctx, RSIndexResult **hit) {
 ok:
   // make sure we did not overflow
   if (nc->base.current->docId > nc->maxDocId) {
+    IITER_SET_EOF(&nc->base);
     return INDEXREAD_EOF;
   }
 
@@ -1258,6 +1268,7 @@ IndexIterator *NewNotIterator(IndexIterator *it, t_docId maxDocId, double weight
   nc->maxDocId = maxDocId;
   nc->len = 0;
   nc->weight = weight;
+  nc->base.isValid = 1;
 
   IndexIterator *ret = &nc->base;
   ret->ctx = nc;
