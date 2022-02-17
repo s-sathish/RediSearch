@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import collections
+from itertools import chain
 import os
 import random
 import re
@@ -16,6 +17,11 @@ import time
 
 from common import *
 from includes import *
+from RLTest import Defaults
+from enum import Enum, auto
+from common import TimeLimit
+
+Defaults.decode_responses = True
 
 CREATE_INDICES_TARGET_DIR = '/tmp/test'
 BASE_RDBS_URL = 'https://s3.amazonaws.com/redismodules/redisearch-enterprise/rdbs/'
@@ -239,44 +245,45 @@ class Connection(object):
         return self.sock.getsockname()[1]
 
     def read(self, bytes):
-        return self.sockf.read(bytes)
+        return self.decoder(self.sockf.read(bytes))
+
+    def read(self, size):
+        return self.decoder(self.sockf.read(size))
 
     def read_at_most(self, bytes, timeout=0.01):
         self.sock.settimeout(timeout)
-        return self.sock.recv(bytes)
+        return self.decoder(self.sock.recv(bytes))
 
     def send(self, data):
-        self.sockf.write(data)
+        self.sockf.write(self.encoder(data))
         self.sockf.flush()
+
+    def encoder(self, value):
+        if isinstance(value, str):
+            return value.encode('utf-8')
+        else:
+            return value
+
+    def decoder(self, value):
+        if isinstance(value, bytes):
+            return value.decode('utf-8')
+        else:
+            return value
 
     def readline(self):
-        return self.sockf.readline()
-
-    def send_bulk_header(self, data_len):
-        self.sockf.write('$%d\r\n' % data_len)
-        self.sockf.flush()
+        return self.decoder(self.sockf.readline())
 
     def send_bulk(self, data):
-        self.sockf.write('$%d\r\n%s\r\n' % (len(data), data))
+        data = self.encoder(data)
+        binary_data = b'$%d\r\n%s\r\n' % (len(data), data)
+        self.sockf.write(binary_data)
         self.sockf.flush()
 
     def send_status(self, data):
-        self.sockf.write('+%s\r\n' % data)
+        binary_data = b'+%s\r\n' % self.encoder(data)
+        self.sockf.write(binary_data)
         self.sockf.flush()
 
-    def send_error(self, data):
-        self.sockf.write('-%s\r\n' % data)
-        self.sockf.flush()
-
-    def send_integer(self, data):
-        self.sockf.write(':%u\r\n' % data)
-        self.sockf.flush()
-
-    def send_mbulk(self, data):
-        self.sockf.write('*%d\r\n' % len(data))
-        for elem in data:
-            self.sockf.write('$%d\r\n%s\r\n' % (len(elem), elem))
-        self.sockf.flush()
 
     def read_mbulk(self, args_count=None):
         if args_count is None:
@@ -316,21 +323,6 @@ class Connection(object):
         self.current_request = req
         self.send_status(status)
 
-    def wait_until_writable(self, timeout=None):
-        try:
-            gevent.socket.wait_write(self.sockf.fileno(), timeout)
-        except gevent.socket.error:
-            return False
-        return True
-
-    def wait_until_readable(self, timeout=None):
-        if self.closed:
-            return False
-        try:
-            gevent.socket.wait_read(self.sockf.fileno(), timeout)
-        except gevent.socket.error:
-            return False
-        return True
 
     def read_response(self):
         line = self.readline()
@@ -354,7 +346,7 @@ class Connection(object):
                 raise Exception('Invalid bulk response: %s' % line)
             if bulk_len == -1:
                 return None
-            data = self.sockf.read(bulk_len + 2)
+            data = self.read(bulk_len + 2)
             if len(data) < bulk_len:
                 self.peer_closed = True
                 self.close()
@@ -400,7 +392,7 @@ class ShardMock:
 
     def StartListening(self, port, attempts=1):
         for i in range(1, attempts + 1):
-            self.stream_server = gevent.server.StreamServer(('127.0.0.1', port), self._handle_conn)
+            self.stream_server = gevent.server.StreamServer(('localhost', port), self._handle_conn)
             try:
                 self.stream_server.start()
             except Exception as e:
@@ -510,7 +502,7 @@ def sendShortReads(env, rdb_file, expected_index):
     env.assertGreater(total_len, SHORT_READ_BYTES_DELTA)
     r = range(0, total_len + 1, SHORT_READ_BYTES_DELTA)
     if (total_len % SHORT_READ_BYTES_DELTA) != 0:
-        r = r + range(total_len, total_len + 1)
+        r = chain(range(total_len, total_len + 1), r)
     for b in r:
         rdb = full_rdb[0:b]
         runShortRead(env, rdb, total_len, expected_index)
