@@ -360,3 +360,46 @@ def test_MOD1907(env):
   # Test FT.CREATE w/o fields parameters
   env.expect('FT.CREATE', 'idx', 'ON', 'HASH', 'SCHEMA').error().contains('Fields arguments are missing')
   env.expect('FT.CREATE', 'idx', 'STOPWORDS', 0, 'SCHEMA').error().contains('Fields arguments are missing')
+
+def test_MOD2629(env):
+  conn = getConnectionByEnv(env)
+  conn.execute_command('FT.CREATE', 'idx', 'SCHEMA', 'tag', 'TAG')
+  conn.execute_command('HSET', 'doc1', 'tag', 119317, 'data', 119317)
+  conn.execute_command('del', 'doc1')
+  conn.execute_command('HSET', 'doc2', 'tag', 118394, 'data', 118394)
+  #conn.execute_command('HSET', 'doc3', 'tag', 119361, 'data', 119361)
+  conn.execute_command('HSET', 'doc4', 'tag', 119328, 'data', 119328)
+  conn.execute_command('HSET', 'doc5', 'tag', 120448, 'data', 120448)
+  conn.execute_command('HSET', 'doc6', 'tag', 113732, 'data', 113732)
+
+  env.expect('FT.SEARCH', 'idx', '@tag:{119317|118394|119361|119328|120448|113732}',
+             'LIMIT', '0', '5000', 'NOCONTENT').equal([4L, 'doc2', 'doc4', 'doc5', 'doc6'])
+  
+  #conn.execute_command('HSET', 'doc11', 'tag', 119317, 'data', 119317)
+  conn.execute_command('HSET', 'doc12', 'tag', 118394, 'data', 118394)
+  conn.execute_command('HSET', 'doc13', 'tag', 119361, 'data', 119361)
+  conn.execute_command('HSET', 'doc14', 'tag', 119328, 'data', 119328)
+  conn.execute_command('HSET', 'doc15', 'tag', 120448, 'data', 120448)
+  #conn.execute_command('HSET', 'doc16', 'tag', 113732, 'data', 113732)
+
+  env.expect('FT.SEARCH', 'idx', '@tag:{119317|118394|119361|119328|120448|113732}',
+             'LIMIT', '0', '5000', 'NOCONTENT').equal([8L,
+             'doc2', 'doc4', 'doc5', 'doc6', 'doc12', 'doc13', 'doc14', 'doc15'])
+
+  conn.execute_command('DEL', 'doc1')
+  conn.execute_command('DEL', 'doc2')
+  conn.execute_command('DEL', 'doc4')
+
+  env.expect('FT.SEARCH', 'idx', '@tag:{119317|118394|119361|119328|120448|113732}',
+             'LIMIT', '0', '5000', 'NOCONTENT').equal([6L,
+             'doc5', 'doc6', 'doc12', 'doc13', 'doc14', 'doc15'])
+
+  conn.execute_command('DEL', 'doc5')
+  conn.execute_command('DEL', 'doc6')
+  conn.execute_command('DEL', 'doc12')
+  conn.execute_command('DEL', 'doc13')
+  conn.execute_command('DEL', 'doc14')
+  conn.execute_command('DEL', 'doc15')
+
+  env.expect('FT.SEARCH', 'idx', '@tag:{119317|118394|119361|119328|120448|113732}',
+             'LIMIT', '0', '5000', 'NOCONTENT').equal([0L])
