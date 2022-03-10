@@ -202,6 +202,7 @@ static size_t getResultsFactor(AREQ *req) {
 void sendChunk(AREQ *req, RedisModuleCtx *outctx, size_t limit) {
   size_t nrows = 0;
   size_t nelem = 0;
+  size_t resultFactor = 0;
   SearchResult r = {0};
   int rc = RS_RESULT_EOF;
   ResultProcessor *rp = req->qiter.endProc;
@@ -226,11 +227,12 @@ void sendChunk(AREQ *req, RedisModuleCtx *outctx, size_t limit) {
     PLN_ArrangeStep *arng = AGPLN_GetArrangeStep(&req->ap);
     size_t reqLimit = arng && arng->isLimited? arng->limit : DEFAULT_LIMIT;
     size_t reqOffset = arng && arng->isLimited? arng->offset : 0;
-    size_t resultFactor = getResultsFactor(req);
+    resultFactor = getResultsFactor(req);
     size_t reqResults = req->qiter.totalResults > reqOffset ? req->qiter.totalResults - reqOffset : 0;
     resultsLen = 1 + MIN(limit, MIN(reqLimit, reqResults)) * resultFactor;
   }
 
+  uint32_t totalResults = req->qiter.totalResults;
   RedisModule_ReplyWithArray(outctx, resultsLen);
 
   if (rc == RS_RESULT_TIMEDOUT) {
@@ -239,14 +241,14 @@ void sendChunk(AREQ *req, RedisModuleCtx *outctx, size_t limit) {
       RedisModule_ReplyWithSimpleString(outctx, "Timeout limit was reached");
     } else {
       rc = RS_RESULT_OK;
-      RedisModule_ReplyWithLongLong(outctx, req->qiter.totalResults);
+      RedisModule_ReplyWithLongLong(outctx, totalResults);
     }
   } else if (rc == RS_RESULT_ERROR) {
-    RedisModule_ReplyWithLongLong(outctx, req->qiter.totalResults);
+    RedisModule_ReplyWithLongLong(outctx, totalResults);
     RedisModule_ReplyWithArray(outctx, 1);
     QueryError_ReplyAndClear(outctx, req->qiter.err);
   } else {
-    RedisModule_ReplyWithLongLong(outctx, req->qiter.totalResults);
+    RedisModule_ReplyWithLongLong(outctx, totalResults);
   }
   nelem++;
 
@@ -274,10 +276,17 @@ done:
   }
 
   // Reset the total results length:
-  req->qiter.totalResults = 0;
   if (resultsLen == REDISMODULE_POSTPONED_ARRAY_LEN) {
     RedisModule_ReplySetArrayLength(outctx, nelem);
+  } else if (resultFactor) {
+    uint32_t diff = totalResults - req->qiter.totalResults;
+    if (diff) {
+      for (int i = 0; i < diff * resultFactor; ++i) {
+        RedisModule_ReplyWithNull(outctx);
+      }
+    }
   }
+  req->qiter.totalResults = 0;
 }
 
 void AREQ_Execute(AREQ *req, RedisModuleCtx *outctx) {
