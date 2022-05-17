@@ -25,6 +25,7 @@
 #define PREFIX                          25
 #define PERCENT                         26
 #define ATTRIBUTE                       27
-#define AS_S                            28
-#define AS_T                            29
-#define SEMICOLON                       30
+#define BLOB                            28
+#define AS_S                            29
+#define AS_T                            30
+#define SEMICOLON                       31

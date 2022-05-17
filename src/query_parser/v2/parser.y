@@ -32,6 +32,7 @@
 %left PREFIX.
 %left PERCENT.
 %left ATTRIBUTE.
+%left BLOB.
 
 // Thanks to these fallback directives, Any "as" appearing in the query,
 // other than in a vector_query, Will either be considered as a term,
@@ -148,6 +149,9 @@ static void reportSyntaxError(QueryError *status, QueryToken* tok, const char *m
 
 %type prefix { QueryNode * }
 %destructor prefix { QueryNode_Free($$); }
+
+%type blob { QueryNode * }
+%destructor blob { QueryNode_Free($$); }
 
 %type termlist { QueryNode * }
 %destructor termlist { QueryNode_Free($$); }
@@ -569,6 +573,10 @@ text_expr(A) ::= prefix(B) . [PREFIX]  {
 A = B;
 }
 
+text_expr(A) ::= blob(B) . [BLOB]  {
+A = B;
+}
+
 text_expr(A) ::= STOPWORD . [STOPWORD] {
   A = NULL;
 }
@@ -633,6 +641,10 @@ text_expr(A) ::= TILDE text_expr(B) . {
 /////////////////////////////////////////////////////////////////
 
 prefix(A) ::= PREFIX(B) . [PREFIX] {
+    A = NewPrefixNode_WithParams(ctx, &B);
+}
+
+blob(A) ::= BLOB(B) . [BLOB] {
     A = NewPrefixNode_WithParams(ctx, &B);
 }
 

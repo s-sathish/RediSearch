@@ -43,12 +43,14 @@ percent = '%';
 rsqb = ']';
 lsqb = '[';
 escape = '\\';
+squote = "'";
 escaped_character = escape (punct | space | escape);
 term = (((any - (punct | cntrl | space | escape)) | escaped_character) | '_')+  $ 0 ;
 mod = '@'.term $ 1;
 attr = '$'.term $ 1;
 prefix = (term.star | number.star | attr.star) $1;
 as = 'AS'|'aS'|'As'|'as';
+blob = squote . (any - squote)+ . squote $4;
 
 main := |*
 
@@ -88,6 +90,15 @@ main := |*
     tok.len = te - (ts + 1);
     tok.s = ts+1;
     RSQuery_Parse_v2(pParser, ATTRIBUTE, tok, q);
+    if (!QPCTX_ISOK(q)) {
+      fbreak;
+    }
+  };
+  blob => {
+    tok.pos = ts-q->raw;
+    tok.len = (te - 1) - (ts + 1);
+    tok.s = ts+1;
+    RSQuery_Parse_v2(pParser, BLOB, tok, q);
     if (!QPCTX_ISOK(q)) {
       fbreak;
     }
