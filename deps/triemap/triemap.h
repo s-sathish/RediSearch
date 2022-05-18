@@ -107,6 +107,7 @@ size_t TrieMap_MemUsage(TrieMap *t);
 /* trie iterator stack node. for internal use only */
 typedef struct {
   int state;
+  bool found;
   TrieMapNode *n;
   tm_len_t stringOffset;
   tm_len_t childOffset;
@@ -123,10 +124,9 @@ typedef struct {
 
   const char *prefix;
   tm_len_t prefixLen;
-  int inSuffix;
 } TrieMapIterator;
 
-void __tmi_Push(TrieMapIterator *it, TrieMapNode *node);
+void __tmi_Push(TrieMapIterator *it, TrieMapNode *node, bool found);
 void __tmi_Pop(TrieMapIterator *it);
 
 /* Iterate the trie for all the suffixes of a given prefix. This returns an
