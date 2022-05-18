@@ -549,12 +549,10 @@ void TrieMapNode_Free(TrieMapNode *n, void (*freeCB)(void *)) {
 #define TM_ITERSTATE_CHILDREN 1
 
 /* Push a new trie node on the iterator's stack */
-inline void __tmi_Push(TrieMapIterator *it, TrieMapNode *node, tm_len_t stringOffset,
-                       bool found) {
+inline void __tmi_Push(TrieMapIterator *it, TrieMapNode *node, tm_len_t stringOffset) {
   __tmi_stackNode stackNode = {
       .childOffset = 0,
       .stringOffset = stringOffset,
-      .found = found,
       .n = node,
       .state = TM_ITERSTATE_SELF,
   };
@@ -564,6 +562,9 @@ inline void __tmi_Push(TrieMapIterator *it, TrieMapNode *node, tm_len_t stringOf
 inline void __tmi_Pop(TrieMapIterator *it) {
   __tmi_stackNode *current = __tmi_current(it);
   it->buf = array_trimm_len(it->buf, current->stringOffset);
+  if (array_len(it->buf) < it->prefixLen) {
+    it->inSuffix = 0;
+  }
   array_pop(it->stack);
 }
 
@@ -576,7 +577,7 @@ TrieMapIterator *TrieMap_Iterate(TrieMap *t, const char *prefix, tm_len_t len) {
   it->prefixLen = len;
   it->mode = TM_PREFIX_MODE;
 
-  __tmi_Push(it, t->root, 0, false);
+  __tmi_Push(it, t->root, 0);
 
   return it;
 }
@@ -839,12 +840,12 @@ int TrieMapIterator_Next(TrieMapIterator *it, char **ptr, tm_len_t *len, void **
     if (current->state == TM_ITERSTATE_SELF) {
       while (current->stringOffset < n->len) {
         char b = current->n->str[current->stringOffset];
-        if (!current->found) {
+        if (!it->inSuffix) {
           if (it->prefix[array_len(it->buf)] != b) {
             goto pop;
           }
           if (array_len(it->buf) == it->prefixLen - 1) {
-            current->found = true;
+            it->inSuffix = true;
           }
         }
 
@@ -857,14 +858,14 @@ int TrieMapIterator_Next(TrieMapIterator *it, char **ptr, tm_len_t *len, void **
 
       // this is required for an empty node to switch to suffix mode
       if (array_len(it->buf) == it->prefixLen) {
-        current->found = true;
+        it->inSuffix = true;
       }
 
       // switch to "children mode"
       current->state = TM_ITERSTATE_CHILDREN;
 
       // we've reached
-      if (__trieMapNode_isTerminal(n) && current->found) {
+      if (__trieMapNode_isTerminal(n) && it->inSuffix) {
         *ptr = it->buf;
         *len = array_len(it->buf);
         *value = n->value;
@@ -876,16 +877,16 @@ int TrieMapIterator_Next(TrieMapIterator *it, char **ptr, tm_len_t *len, void **
       // push the next child that matches
       tm_len_t nch = current->n->numChildren;
       while (current->childOffset < nch) {
-        if (current->found ||
+        if (it->inSuffix ||
             *__trieMapNode_childKey(n, current->childOffset) == it->prefix[array_len(it->buf)]) {
           TrieMapNode *ch = __trieMapNode_children(n)[current->childOffset++];
 
           // unless in suffix mode, no need to go back here after popping the
           // child, so we just set the child offset at the end
-          if (!current->found) current->childOffset = nch;
+          if (!it->inSuffix) current->childOffset = nch;
 
           // Add the matching child to the stack
-          __tmi_Push(it, ch, 0, current->found);
+          __tmi_Push(it, ch, 0);
 
           goto next;
         }
@@ -971,9 +972,10 @@ static int __partial_Next(TrieMapIterator *it, __tmi_stackNode *sn, char **ptr, 
                                                  n->len - compareLen - localOffset);
   }
   iter->stack = array_new(__tmi_stackNode, 8);
-  __tmi_Push(iter, n, n->len, true);
+  __tmi_Push(iter, n, n->len);
   iter->prefix = "";
   iter->prefixLen = 0;
+  iter->inSuffix = 1;
 
   // get a match
   __fullmatch_Next(it, ptr, len, value);
@@ -1028,13 +1030,13 @@ int TrieMapIterator_NextContains(TrieMapIterator *it, char **ptr, tm_len_t *len,
         TrieMapNode *ch = __trieMapNode_children(n)[current->childOffset++];
 
         // Add the matching child to the stack
-        __tmi_Push(it, ch, 0, current->found);
+        __tmi_Push(it, ch, 0);
 
         goto next;        
       }
     }
   
-    __tmi_Pop(it); 
+    __tmi_Pop(it);
   next:
     continue;
   }
