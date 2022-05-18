@@ -971,9 +971,10 @@ static int __partial_Next(TrieMapIterator *it, __tmi_stackNode *sn, char **ptr, 
                                                  n->len - compareLen - localOffset);
   }
   iter->stack = array_new(__tmi_stackNode, 8);
-  __tmi_Push(iter, n, n->len, true);
+  __tmi_Push(iter, n, n->len, false);
   iter->prefix = "";
   iter->prefixLen = 0;
+  it->mode = TM_PREFIX_MODE;
 
   // get a match
   __fullmatch_Next(it, ptr, len, value);
