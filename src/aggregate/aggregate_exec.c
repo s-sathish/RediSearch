@@ -204,7 +204,7 @@ void sendChunk(AREQ *req, RedisModuleCtx *outctx, size_t limit) {
     PLN_ArrangeStep *arng = AGPLN_GetArrangeStep(&req->ap);
     size_t reqLimit = arng && arng->isLimited? arng->limit : DEFAULT_LIMIT;
     size_t reqOffset = arng && arng->isLimited? arng->offset : 0;
-    size_t resultFactor = getResultsFactor(req);
+    size_t resultFactor = getResultsFactor(req->reqflags);
     
     size_t reqResults;
     if (reqLimit + reqOffset <= RSGlobalConfig.maxSearchResults) {
