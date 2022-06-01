@@ -23,9 +23,11 @@
 #define TAGLIST                         23
 #define TERMLIST                        24
 #define PREFIX                          25
-#define PERCENT                         26
-#define ATTRIBUTE                       27
-#define BLOB                            28
-#define AS_S                            29
-#define AS_T                            30
-#define SEMICOLON                       31
+#define SUFFIX                          26
+#define CONTAINS                        27
+#define PERCENT                         28
+#define ATTRIBUTE                       29
+#define BLOB                            30
+#define AS_S                            31
+#define AS_T                            32
+#define SEMICOLON                       33
