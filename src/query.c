@@ -79,6 +79,9 @@ void QueryNode_Free(QueryNode *n) {
     case QN_PREFIX:
       QueryTokenNode_Free(&n->pfx.tok);
       break;
+    case QN_BLOB:
+      QueryTokenNode_Free(&n->blb.tok);
+      break;
     case QN_GEO:
       if (n->gn.gf) {
         GeoFilter_Free((void *)n->gn.gf);
@@ -198,6 +201,19 @@ QueryNode *NewPrefixNode_WithParams(QueryParseCtx *q, QueryToken *qt, bool prefi
     assert (qt->type == QT_PARAM_TERM);
     QueryNode_InitParams(ret, 1);
     QueryNode_SetParam(q, &ret->params[0], &ret->pfx.tok.str, &ret->pfx.tok.len, qt);
+  }
+  return ret;
+}
+
+QueryNode *NewBlobNode_WithParams(QueryParseCtx *q, QueryToken *qt) {
+  QueryNode *ret = NewQueryNode(QN_BLOB);
+  if (qt->type == QT_TERM) {
+    char *s = rm_strdupcase(qt->s, qt->len);
+    ret->blb.tok = (RSToken){.str = s, .len = strlen(s), .expanded = 0, .flags = 0};
+  } else {
+    assert (qt->type == QT_PARAM_TERM);
+    QueryNode_InitParams(ret, 1);
+    QueryNode_SetParam(q, &ret->params[0], &ret->blb.tok.str, &ret->blb.tok.len, qt);
   }
   return ret;
 }
@@ -511,6 +527,60 @@ static IndexIterator *Query_EvalPrefixNode(QueryEvalCtx *q, QueryNode *qn) {
                             QN_PREFIX, qn->pfx.tok.str);
   }
 }
+
+/* Ealuate a prefix node by expanding all its possible matches and creating one big UNION on all
+ * of them.
+ * Used for Prefix, Contains and suffix nodes.
+*/
+static IndexIterator *Query_EvalBlobNode(QueryEvalCtx *q, QueryNode *qn) {
+  RS_LOG_ASSERT(qn->type == QN_BLOB, "query node type should be blob");
+  RS_LOG_ASSERT(qn->blb.blobType == BlobType_Wildcard, "blob type should be wildcard");
+
+  IndexSpec *spec = q->sctx->spec;
+  Trie *t = spec->terms;
+  ContainsCtx ctx = {.q = q, .opts = &qn->opts};
+
+  if (!t) {
+    return NULL;
+  }
+
+  rune *str = NULL;
+  size_t nstr;
+  if (qn->blb.tok.str) {
+    str = strToFoldedRunes(qn->blb.tok.str, &nstr);
+  }
+  /*
+  ctx.cap = 8;
+  ctx.its = rm_malloc(sizeof(*ctx.its) * ctx.cap);
+  ctx.nits = 0;
+
+  // spec support contains queries
+  if (spec->suffix) {
+    // all modifier fields are supported
+    if (qn->opts.fieldMask == RS_FIELDMASK_ALL ||
+       (spec->suffixMask & qn->opts.fieldMask) == qn->opts.fieldMask) {
+    Suffix_IterateContains(spec->suffix->root, str, nstr, qn->pfx.prefix,
+                           suffixIterCb, &ctx);
+    } else {
+      QueryError_SetErrorFmt(q->status, QUERY_EGENERIC, "Contains query on fields without WITHSUFFIXTRIE support");
+    }
+  } else {
+
+    TrieNode_IterateContains(t->root, str, nstr, qn->pfx.prefix, qn->pfx.suffix,
+                           rangeIterCb, &ctx, q->sctx->timeout);
+  }
+
+  rm_free(str);
+  if (!ctx.its || ctx.nits == 0) {
+    rm_free(ctx.its);
+    return NULL;
+  } else {
+    return NewUnionIterator(ctx.its, ctx.nits, q->docTable, 1, qn->opts.weight,
+                            QN_PREFIX, qn->pfx.tok.str);
+  }*/
+  return NULL;
+}
+
 
 typedef struct {
   IndexIterator **its;
@@ -1065,6 +1135,8 @@ IndexIterator *Query_EvalNode(QueryEvalCtx *q, QueryNode *n) {
       return Query_EvalNotNode(q, n);
     case QN_PREFIX:
       return Query_EvalPrefixNode(q, n);
+    case QN_BLOB:
+      return Query_EvalBlobNode(q, n);
     case QN_LEXRANGE:
       return Query_EvalLexRangeNode(q, n);
     case QN_FUZZY:
@@ -1213,6 +1285,7 @@ int QueryNode_EvalParams(dict *params, QueryNode *n, QueryError *status) {
     case QN_PHRASE:
     case QN_NOT:
     case QN_PREFIX:
+    case QN_BLOB:
     case QN_LEXRANGE:
     case QN_FUZZY:
     case QN_OPTIONAL:
@@ -1253,12 +1326,13 @@ void QueryNode_AddChildren(QueryNode *n, QueryNode **children, size_t nchildren)
   if (n->type == QN_TAG) {
     for (size_t ii = 0; ii < nchildren; ++ii) {
       if (children[ii]->type == QN_TOKEN || children[ii]->type == QN_PHRASE ||
-          children[ii]->type == QN_PREFIX || children[ii]->type == QN_LEXRANGE) {
+          children[ii]->type == QN_PREFIX || children[ii]->type == QN_LEXRANGE ||
+          children[ii]->type == QN_BLOB) {
         n->children = array_ensure_append(n->children, children + ii, 1, QueryNode *);
       }
     }
   } else {
-    array_ensure_append(n->children, children, nchildren, QueryNode *);
+    n->children = array_ensure_append(n->children, children, nchildren, QueryNode *);
   }
 }
 
@@ -1355,6 +1429,11 @@ static sds QueryNode_DumpSds(sds s, const IndexSpec *spec, const QueryNode *qs, 
 
     case QN_PREFIX:
       s = sdscatprintf(s, "PREFIX{%s*", (char *)qs->pfx.tok.str);
+      break;
+    
+
+    case QN_BLOB:
+      s = sdscatprintf(s, "BLOB{%s", (char *)qs->blb.tok.str);
       break;
 
     case QN_LEXRANGE:
@@ -1565,6 +1644,27 @@ static int QueryNode_ApplyAttribute(QueryNode *qn, QueryAttribute *attr, QueryEr
     }
     // qn->opts.noPhonetic = PHONETIC_DEFAULT -> means no special asks regarding phonetics
     //                                          will be enable if field was declared phonetic
+
+  } else if (STR_EQCASE(attr->name, attr->namelen, "type")) {
+    if (qn->type == QN_TAG) {
+      if (!qn->children || QueryNode_NumChildren(qn) != 1) {
+        QueryError_SetErrorFmt(status, QUERY_ESYNTAX, "TODO: err. Tag blob is required for $type attribute");
+        return 0;
+      }
+      if (qn->children[0]->type != QN_BLOB) {
+        QueryError_SetErrorFmt(status, QUERY_ESYNTAX, "Blob is required for $type attribute");
+        return 0;
+      }
+    } else if (qn->type != QN_BLOB) {
+      QueryError_SetErrorFmt(status, QUERY_ESYNTAX, "Blob is required for $type attribute");
+      return 0;
+    }
+    if (STR_EQCASE(attr->value, attr->vallen, "wildcard")) {
+      qn->blb.blobType = BlobType_Wildcard;
+    } else {
+      MK_INVALID_VALUE();
+      return 0;
+    }
 
   } else {
     QueryError_SetErrorFmt(status, QUERY_ENOOPTION, "Invalid attribute %.*s", (int)attr->namelen,

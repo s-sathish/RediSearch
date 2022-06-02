@@ -52,6 +52,9 @@ typedef enum {
   /* Vector */
   QN_VECTOR,
 
+  /* Blob */
+  QN_BLOB,
+
   /* Null term - take no action */
   QN_NULL
 } QueryNodeType;
@@ -85,6 +88,15 @@ typedef struct {
   bool prefix;
   bool suffix;
 } QueryPrefixNode;
+
+typedef enum {
+  BlobType_Wildcard = 1,
+} Query_BlobType;
+
+typedef struct {
+  RSToken tok;
+  Query_BlobType blobType;
+} QueryBlobNode;
 
 typedef struct {
   RSToken tok;
@@ -160,6 +172,7 @@ typedef struct RSQueryNode {
     QueryNotNode inverted;
     QueryOptionalNode opt;
     QueryPrefixNode pfx;
+    QueryBlobNode blb;
     QueryTagNode tag;
     QueryFuzzyNode fz;
     QueryLexRangeNode lxrng;

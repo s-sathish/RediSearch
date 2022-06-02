@@ -659,7 +659,7 @@ affix(A) ::= CONTAINS(B) . {
 }
 
 blob(A) ::= BLOB(B) . [BLOB] {
-    A = NewPrefixNode_WithParams(ctx, &B, true, true);
+    A = NewBlobNode_WithParams(ctx, &B);
 }
 
 /////////////////////////////////////////////////////////////////
@@ -754,6 +754,11 @@ tag_list(A) ::= affix(B) . [TAGLIST] {
     QueryNode_AddChild(A, B);
 }
 
+tag_list(A) ::= blob(B) . [TAGLIST] {
+    A = NewPhraseNode(0);
+    QueryNode_AddChild(A, B);
+}
+
 tag_list(A) ::= termlist(B) . [TAGLIST] {
     A = NewPhraseNode(0);
     QueryNode_AddChild(A, B);
@@ -774,6 +779,11 @@ tag_list(A) ::= tag_list(B) OR STOPWORD(C) . [TAGLIST] {
 }
 
 tag_list(A) ::= tag_list(B) OR affix(C) . [TAGLIST] {
+    QueryNode_AddChild(B, C);
+    A = B;
+}
+
+tag_list(A) ::= tag_list(B) OR blob(C) . [TAGLIST] {
     QueryNode_AddChild(B, C);
     A = B;
 }
