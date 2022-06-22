@@ -471,6 +471,7 @@ typedef struct {
 
 static int rangeIterCb(const rune *r, size_t n, void *p);
 static int suffixIterCb(const char *s, size_t n, void *p);
+static int wildcardIterCb(const char *s, size_t n, void *p);
 
 /* Ealuate a prefix node by expanding all its possible matches and creating one big UNION on all
  * of them.
@@ -537,23 +538,32 @@ static IndexIterator *Query_EvalBlobNode(QueryEvalCtx *q, QueryNode *qn) {
   RS_LOG_ASSERT(qn->blb.blobType == BlobType_Wildcard, "blob type should be wildcard");
 
   IndexSpec *spec = q->sctx->spec;
-  Trie *t = spec->terms;
-  ContainsCtx ctx = {.q = q, .opts = &qn->opts};
-
-  if (!t) {
-    return NULL;
-  }
+  Trie *t = spec->suffix;
 
   rune *str = NULL;
   size_t nstr;
   if (qn->blb.tok.str) {
     str = strToFoldedRunes(qn->blb.tok.str, &nstr);
   }
+
+  switch (qn->blb.blobType) {
+  case BlobType_Wildcard:
+    if (spec->suffix) {
+      Suffix_IterateWildcard(t->root, str, nstr, NULL, NULL);
+    }
+    break;
+  } 
+  ContainsCtx ctx = {.q = q, .opts = &qn->opts};
+
+  if (!t) {
+    return NULL;
+  }
+
   /*
   ctx.cap = 8;
   ctx.its = rm_malloc(sizeof(*ctx.its) * ctx.cap);
   ctx.nits = 0;
-
+;
   // spec support contains queries
   if (spec->suffix) {
     // all modifier fields are supported
@@ -637,7 +647,7 @@ static int rangeIterCb(const rune *r, size_t n, void *p) {
 }
 
 static int suffixIterCb(const char *s, size_t n, void *p) {
-  LexRangeCtx *ctx = p;
+  ContainsCtx *ctx = p;
   if (ctx->nits >= RSGlobalConfig.maxPrefixExpansions) {
     return REDISEARCH_ERR;
   }

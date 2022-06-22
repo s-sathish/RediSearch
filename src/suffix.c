@@ -156,6 +156,22 @@ static int recursiveAdd(TrieNode *node, TrieSuffixCallback callback, void *ctx) 
   return REDISMODULE_OK;
 }
 
+// return the number of terms of node and its children in suffix trie
+static int64_t recursiveCount(TrieNode *node) {
+  int64_t count = 0;
+  if (node->payload) {
+    suffixData *data = Suffix_GetData(node);
+    count = array_len(data->array);
+  }
+  if (node->numChildren) {
+    TrieNode **children = __trieNode_children(node);
+    for (int i = 0; i < node->numChildren; ++i) {
+      count += recursiveCount(children[i]);
+    }
+  }
+  return count;
+}
+
 void Suffix_IterateContains(TrieNode *n, const rune *str, size_t nstr, bool prefix,
                             TrieSuffixCallback callback, void *ctx) {
   if (prefix) {
@@ -183,6 +199,72 @@ void suffixTrie_freeCallback(void *payload) {
   data->term = NULL;
 }
 
+static int checkIfSuffix(const rune *str, size_t nstr) {
+  int i = 0;
+  while (i < nstr && str[i] != (rune)'*' && str[i] != (rune)'?') {
+    ++i;
+  }
+  if (i >= MIN_SUFFIX) {
+    return i;
+  }
+  return 0;
+}
+
+void Suffix_IterateWildcard(TrieNode *n, const rune *str, size_t nstr,
+                              TrieSuffixCallback callback, void *ctx) {
+  // check if suffix
+  int sufLen = checkIfSuffix(str, nstr);
+  if (sufLen == nstr) {
+    // exact match
+    size_t len;
+    char *charStr = runesToStr(str, nstr, &len);
+    callback(charStr, len, ctx);
+    rm_free(charStr);
+    return;
+  } else if (sufLen > 0) {
+    // wildcard with suffix end 
+    return Suffix_IterateContains(n, str, nstr, false, callback, ctx);
+  }
+  
+  // choose a substring with least matches
+  int idx = 0;
+  int pos[nstr];
+  int len[nstr];
+  for (int i = 0; i < nstr;) {
+    while (str[i] == (rune)'*' || str[i] == (rune)'?') {
+      ++i;
+    }
+    pos[idx] = i;
+    while (i < nstr && str[i] != (rune)'*' && str[i] != (rune)'?') {
+      ++i;
+    }
+    len[idx] = i - pos[idx];
+    ++idx;
+  }
+
+  int64_t bestCount = 0;
+  int64_t bestIdx = REDISEARCH_UNINITIALIZED; 
+  for (int i = 0; i < idx - 1; ++i) {
+    if (len[i] < MIN_SUFFIX) {
+      continue;
+    }
+    printf("%d ", len[i]);
+    TrieNode *node = TrieNode_Get(n, str + pos[i], len[i], 0, NULL);
+    if (node) {
+      int64_t count = recursiveCount(node);
+      if (count > bestCount) {
+        bestCount = count;
+        bestIdx = i;
+      }
+    }
+  }
+  //
+  if (bestIdx != REDISEARCH_UNINITIALIZED) {
+    return Suffix_IterateContains(n, str + pos[bestIdx], len[bestIdx], true, callback, ctx);
+  }
+  // All substring are too small. Impossible to use the suffix trie
+  return;  
+}
 
 /***********************************************************/
 /*****************        TrieMap       ********************/

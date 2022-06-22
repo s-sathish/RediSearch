@@ -20,6 +20,8 @@ void suffixTrie_freeCallback(void *data);
 void Suffix_IterateContains(TrieNode *n, const rune *str, size_t nstr, bool prefix,
                               TrieSuffixCallback callback, void *ctx);
 
+void Suffix_IterateWildcard(TrieNode *n, const rune *str, size_t nstr,
+                              TrieSuffixCallback callback, void *ctx);
 
 /***********************************************************/
 /*****************        TrieMap       ********************/
