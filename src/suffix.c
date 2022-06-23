@@ -199,15 +199,17 @@ void suffixTrie_freeCallback(void *payload) {
   data->term = NULL;
 }
 
+
 static int checkIfSuffix(const rune *str, size_t nstr) {
-  int i = 0;
-  while (i < nstr && str[i] != (rune)'*' && str[i] != (rune)'?') {
-    ++i;
+  // we subtract 1 to fit in the array. we later have to reduce it
+  // from number of chars
+  int i = nstr - 1;
+
+  while (i >= 0 && str[i] != (rune)'*' && str[i] != (rune)'?') {
+    --i;
   }
-  if (i >= MIN_SUFFIX) {
-    return i;
-  }
-  return 0;
+
+  return nstr - i - 1;
 }
 
 void Suffix_IterateWildcard(TrieNode *n, const rune *str, size_t nstr,
@@ -221,9 +223,10 @@ void Suffix_IterateWildcard(TrieNode *n, const rune *str, size_t nstr,
     callback(charStr, len, ctx);
     rm_free(charStr);
     return;
-  } else if (sufLen > 0) {
+  } else if (sufLen >= MIN_SUFFIX) {
     // wildcard with suffix end 
-    return Suffix_IterateContains(n, str, nstr, false, callback, ctx);
+    Suffix_IterateContains(n, str + nstr - sufLen, sufLen, false, callback, ctx);
+    return;
   }
   
   // choose a substring with least matches
@@ -242,17 +245,17 @@ void Suffix_IterateWildcard(TrieNode *n, const rune *str, size_t nstr,
     ++idx;
   }
 
-  int64_t bestCount = 0;
+  int64_t bestCount = INT64_MAX;
   int64_t bestIdx = REDISEARCH_UNINITIALIZED; 
   for (int i = 0; i < idx - 1; ++i) {
     if (len[i] < MIN_SUFFIX) {
       continue;
     }
-    printf("%d ", len[i]);
+    //printf("%d ", len[i]);
     TrieNode *node = TrieNode_Get(n, str + pos[i], len[i], 0, NULL);
     if (node) {
       int64_t count = recursiveCount(node);
-      if (count > bestCount) {
+      if (count < bestCount) {
         bestCount = count;
         bestIdx = i;
       }
@@ -262,6 +265,7 @@ void Suffix_IterateWildcard(TrieNode *n, const rune *str, size_t nstr,
   if (bestIdx != REDISEARCH_UNINITIALIZED) {
     return Suffix_IterateContains(n, str + pos[bestIdx], len[bestIdx], true, callback, ctx);
   }
+
   // All substring are too small. Impossible to use the suffix trie
   return;  
 }
