@@ -84,18 +84,6 @@ struct DocumentIndexer;
        .len = &dummy2,                                                      \
        .type = AC_ARGTYPE_STRING},
 
-/**
- * If wishing to represent field types positionally, use this
- * enum. Since field types are a bitmask, it's pointless to waste
- * space like this
- */
-
-static const char *SpecTypeNames[] = {[IXFLDPOS_FULLTEXT] = SPEC_TEXT_STR,
-                                      [IXFLDPOS_NUMERIC] = SPEC_NUMERIC_STR,
-                                      [IXFLDPOS_GEO] = SPEC_GEO_STR,
-                                      [IXFLDPOS_TAG] = SPEC_TAG_STR,
-                                      [IXFLDPOS_VECTOR] = SPEC_VECTOR_STR};
-
 // TODO: remove usage of keyspace prefix now that RediSearch is out of keyspace
 #define INDEX_SPEC_KEY_PREFIX "idx:"
 #define INDEX_SPEC_KEY_FMT INDEX_SPEC_KEY_PREFIX "%s"
@@ -271,7 +259,7 @@ typedef struct IndexSpec {
   // can be true even if scanner == NULL, in case of a scan being cancelled
   // in favor on a newer, pending scan
   bool scan_in_progress;
-  bool cascadeDelete;             // remove keys when removing spec. used by temporary index
+  bool cascadeDelete;             // (deprecated) remove keys when removing spec. used by temporary index
 
   struct DocumentIndexer *indexer;// Indexer of fields into inverted indexes
 
@@ -289,6 +277,7 @@ typedef struct IndexSpec {
 } IndexSpec;
 
 typedef enum SpecOp { SpecOp_Add, SpecOp_Del } SpecOp;
+typedef enum TimerOp { TimerOp_Add, TimerOp_Del } TimerOp;
 
 typedef struct SpecOpCtx {
   IndexSpec *spec;
@@ -539,6 +528,7 @@ void IndexSpec_ClearAliases(IndexSpec *sp);
 t_fieldMask IndexSpec_ParseFieldMask(IndexSpec *sp, RedisModuleString **argv, int argc);
 
 void IndexSpec_InitializeSynonym(IndexSpec *sp);
+void Indexes_SetTempSpecsTimers(TimerOp op);
 
 //---------------------------------------------------------------------------------------------
 
